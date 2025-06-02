@@ -1,38 +1,46 @@
+import logging
 import os
-from aiogram import Bot, Dispatcher, executor, types
+from aiogram import Bot, Dispatcher, types
+from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.dispatcher.webhook import get_new_configured_app
 from dotenv import load_dotenv
 
 load_dotenv()
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-bot = Bot(token=TOKEN)
+# Настройки
+API_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # Например: https://helstrembot.onrender.com
+WEBHOOK_PATH = f"/webhook/{API_TOKEN}"
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+WEBAPP_HOST = "0.0.0.0"
+WEBAPP_PORT = int(os.environ.get('PORT', 3000))
+
+# Инициализация бота и диспетчера
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
+dp.middleware.setup(LoggingMiddleware())
 
-user_data = {}
-
+# Обработчики
 @dp.message_handler(commands=["start"])
-async def start_handler(message: types.Message):
-    user_data[message.chat.id] = {}
-    await message.answer("Привет! Введи дату рождения (ГГГГ-ММ-ДД):")
+async def cmd_start(message: types.Message):
+    await message.answer("Привет! Я живой и работаю через webhook!")
 
-@dp.message_handler(lambda message: message.chat.id in user_data and "date" not in user_data[message.chat.id])
-async def handle_date(message: types.Message):
-    user_data[message.chat.id]["date"] = message.text
-    await message.answer("Теперь введи время рождения (например, 14:30):")
+@dp.message_handler()
+async def echo(message: types.Message):
+    await message.reply(f"Ты сказал: {message.text}")
 
-@dp.message_handler(lambda message: message.chat.id in user_data and "time" not in user_data[message.chat.id])
-async def handle_time(message: types.Message):
-    user_data[message.chat.id]["time"] = message.text
-    await message.answer("И наконец, город рождения:")
+# Webhook-приложение
+async def on_startup(app):
+    await bot.set_webhook(WEBHOOK_URL)
 
-@dp.message_handler(lambda message: message.chat.id in user_data and "place" not in user_data[message.chat.id])
-async def handle_place(message: types.Message):
-    user_data[message.chat.id]["place"] = message.text
-    await message.answer("Спасибо! Данные получены ✅")
+async def on_shutdown(app):
+    await bot.delete_webhook()
 
-    # Выводим в консоль
-    print(f"Пользователь {message.chat.id}: {user_data[message.chat.id]}")
-    user_data.pop(message.chat.id)
+app = get_new_configured_app(dispatcher=dp, path=WEBHOOK_PATH)
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
 
+# Запуск
 if name == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    from aiohttp import web
+    web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT)
